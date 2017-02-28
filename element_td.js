@@ -1,3 +1,4 @@
+var IS_FIREFOX = navigator.userAgent.toLowerCase().indexOf('firefox') > -1;
 
 /*====================================================
 =            ANIMACIONES Y EVENT HANDLERS            =
@@ -77,10 +78,10 @@ var scale = 32;
 var map_plan = ["^^^^^^^^^^^----",
 				"           ----",
 				"####  #### ----",
-				"   ####  # ----",
-				"         # ----",
-				"   ####  # ----",
-				" ###  #### ----",
+				"   ####  # ....",
+				"         # ....",
+				"   ####  # ....",
+				" ###  #### ....",
 				" #         ....",
 				" ###  #### c...",
 				"   ####  # ....",
@@ -175,7 +176,14 @@ function icon(cx, offset, dest) {
 function text(cx, string, dest, color, font) {
 	if(color) cx.fillStyle = color;
 	if(font) cx.font = font + "px 'Roboto Mono', monospace";
-	cx.fillText(string, dest[0] * scale, dest[1] * scale);
+
+	//https://bugzilla.mozilla.org/show_bug.cgi?id=737852
+	var y = dest[1];
+	if(!IS_FIREFOX) {
+		y -= pixels(2);
+	}
+
+	cx.fillText(string, dest[0] * scale, y * scale);
 }
 
 function icon_text(cx, icon_offset, string, dest, color, font) {
@@ -687,25 +695,28 @@ toolbar.frame = function(frame) {
 	
 	var tower;
 	//white rect
-	rect(foreground, [11, 0], 4, 7, "white");
+	rect(foreground, [11, 0], 4, 3 + pixels(8), "white");
 	//lives and gold
 	icon_text(foreground, [2, 0], game.lives, [13, .25], "black", "bold 10");
 	icon_text(foreground, [1, 0], game.gold, [14, .25]);
 	//Divisor line
-	line(foreground, [11, 0.8125], [11.5, 0.8125], "red");
-	line(foreground, [11.5, 0.8125], [13, 0.8125], "#00ff00");
-	line(foreground, [12.5, 0.8125], [15, 0.8125], "#0000ff");
+	line(foreground, [11, 0.5 + pixels(10)], [11.5, 0.5 + pixels(10)], "red");
+	line(foreground, [11.5, 0.5 + pixels(10)], [13, 0.5 + pixels(10)], "#00ff00");
+	line(foreground, [12.5, 0.5 + pixels(10)], [15, 0.5 + pixels(10)], "#0000ff");
 	//Buy towers, speed control
 	draw_entities(toolbar.buttons);
 	//Divisor line
-	line(foreground, [11, 3.1875], [11.5, 3.1875], "red");
-	line(foreground, [11.5, 3.1875], [13, 3.1875], "#00ff00");
-	line(foreground, [12.5, 3.1875], [15, 3.1875], "#0000ff");
+	line(foreground, [11, 3 + pixels(6)], [11.5, 3 + pixels(6)], "red");
+	line(foreground, [11.5, 3 + pixels(6)], [13, 3 + pixels(6)], "#00ff00");
+	line(foreground, [12.5, 3 + pixels(6)], [15, 3 + pixels(6)], "#0000ff");
 	
 	/*----------  With a tower selected  ----------*/
 	
 	if(game.selected_tower) {
-		
+
+		//white rect
+		rect(foreground, [11, 3 + pixels(8)], 4, 4 - pixels(8), "white");
+
 		/*----------  Draw tower and tower info  ----------*/
 		
 		tower = game.selected_tower;
@@ -725,11 +736,11 @@ toolbar.frame = function(frame) {
 			draw_entities(toolbar.upgrade_button);
 		}
 		if(tower.type === "n") {
-			draw_entities(toolbar.buy_element_button);
 			if(toolbar.hide_elements_timer > 0) {
 				draw_entities(toolbar.element_buttons);
-				toolbar.hide_elements_timer -= frame;
 			}
+			draw_entities(toolbar.buy_element_button);
+			toolbar.hide_elements_timer -= frame;
 		} else {
 			text(foreground, "This tower will only", [11 + pixels(4), 6 + pixels(4)], "gray");
 			text(foreground, "attack ", [11 + pixels(4), 6.5 + pixels(4)]);
@@ -865,60 +876,73 @@ toolbar.upgrade_button = [
 //Buy element
 toolbar.buy_element_button = [
 	rectangular_button(function(x, y, hover) {
-		text(foreground, "ELEMENT", [x + pixels(8), y + pixels(5)], hover ? "black" : "gray");
+
+		if(toolbar.hide_elements_timer > 0) {
+			rect(foreground, [x, y], 1.75, 1, "#eee");
+		}
+
+		var is_selected = hover || toolbar.hide_elements_timer > 0;
+
+		text(foreground, "ELEMENT", [x + pixels(8), y + pixels(5)], is_selected ? "black" : "gray");
 		text(foreground, "for ", [x + pixels(6), y + .5 + pixels(2)]);
 		icon_text(foreground, [1, 0], "20", [x + .75 + pixels(2), y + .5 + pixels(2)],
-		          game.gold < 20 && hover ? "#700" : undefined);
+		          game.gold < 20 && is_selected ? "#700" : undefined);
 		
 	}, [13, 5.25], 1.75, 1, function() {
-		toolbar.hide_elements_timer = 3;
+		if(game.gold >= 20)
+			toolbar.hide_elements_timer = 3;
 	})
 ];
 
 toolbar.element_buttons = [
-	
-	{
-		x: 11 + pixels(6), y: 6, width: text_width(foreground, "FIRE", 10), height: .5,
-		draw: function(x, y, hover) {
-			text(foreground, "FIRE", [x, y],
-			     toolbar.hovering_elements ? "red" : "gray",
-			     (hover ? "bold " : "") + "10");
-			if(hover)
-				toolbar.hide_elements_timer = 3;
-		},
-		onclick: function() {
-			game.buy_element("f");
+	rectangular_button(function(x, y, hover) {
+		if(toolbar.hide_elements_timer > 2.9) {
+			y -= (toolbar.hide_elements_timer - 2.9) / .1 * .5
+		} else if(toolbar.hide_elements_timer < .1) {
+			y -= (.1 - toolbar.hide_elements_timer) / .1 * .5;
 		}
-	},
-	{
-		x: 11 + pixels(6) + text_width(foreground, "FIRE "), y: 6,
-		width: text_width(foreground, "WATER"), height: .5,
-		draw: function(x, y, hover) {
-			text(foreground, "WATER", [x, y],
-			     toolbar.hovering_elements ? "blue" : "gray",
-			     (hover ? "bold " : "") + "10");
-			if(hover)
-				toolbar.hide_elements_timer = 3;
-		},
-		onclick: function() {
-			game.buy_element("a");
+
+		rect(foreground, [x + pixels(4), y + pixels(4)],
+			pixels(8), pixels(8), hover ? "red" : "#faa");
+
+		if(hover) {
+			toolbar.hide_elements_timer = 2.9;
 		}
-	},
-	{
-		x: 11 + pixels(6) + text_width(foreground, "FIRE WATER "), y: 6,
-		width: text_width(foreground, "EARTH"), height: .5,
-		draw: function(x, y, hover) {
-			text(foreground, "EARTH", [x, y],
-			     toolbar.hovering_elements ? "#0f0" : "gray",
-			     (hover ? "bold " : "") + "10");
-			if(hover)
-				toolbar.hide_elements_timer = 3;
-		},
-		onclick: function() {
-			game.buy_element("t");
+	}, [13, 6.25], .5, .5, function() {
+		game.buy_element("f");
+	}),
+	rectangular_button(function(x, y, hover) {
+		if(toolbar.hide_elements_timer > 2.9) {
+			y -= (toolbar.hide_elements_timer - 2.9) / .1 * .5
+		} else if(toolbar.hide_elements_timer < .1) {
+			y -= (.1 - toolbar.hide_elements_timer) / .1 * .5;
 		}
-	}
-	
+
+		rect(foreground, [x + pixels(4), y + pixels(4)],
+			pixels(8), pixels(8), hover ? element_color("t") : "#afa");
+
+		if(hover) {
+			toolbar.hide_elements_timer = 2.9;
+		}
+	}, [13.625, 6.25], .5, .5, function() {
+		game.buy_element("t");
+	}),
+	rectangular_button(function(x, y, hover) {
+		if(toolbar.hide_elements_timer > 2.9) {
+			y -= (toolbar.hide_elements_timer - 2.9) / .1 * .5
+		} else if(toolbar.hide_elements_timer < .1) {
+			y -= (.1 - toolbar.hide_elements_timer) / .1 * .5;
+		}
+
+		rect(foreground, [x + pixels(4), y + pixels(4)],
+			pixels(8), pixels(8), hover ? element_color("a") : "#aaf");
+
+		if(hover) {
+			toolbar.hide_elements_timer = 2.9;
+		}
+	}, [14.25, 6.25], .5, .5, function() {
+		game.buy_element("a");
+	})
 ];
 
 /*----------  Speed control buttons  ----------*/
