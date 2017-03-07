@@ -37,8 +37,18 @@ window.onmousedown = function() {
 };
 
 window.onkeydown = function(event) {
-	if(event.keyCode === 13) {
+	if(event.keyCode === 27) {
 		escape = true;
+	} else if(event.keyCode === 48) {
+		game.speed = 0;
+	} else if(event.keyCode === 49) {
+		game.speed = 1;
+	} else if(event.keyCode === 50) {
+		game.speed = 2;
+	} else if(event.keyCode === 51) {
+		game.speed = 3;
+	} else if(event.keyCode === 52) {
+		game.speed = 4;
 	}
 };
 
@@ -75,9 +85,9 @@ var background = background_canvas.getContext("2d"),
 
 var scale = 32;
 
-var map_plan = ["^^^^^^^^^^^----",
-				"           ----",
-				"####  #### ----",
+var map_plan = ["^^^^^^^^^^^^^^^",
+				"           ....",
+				"####  #### ....",
 				"   ####  # ....",
 				"         # ....",
 				"   ####  # ....",
@@ -98,10 +108,15 @@ background_canvas.width = foreground_canvas.width = fx_canvas.width = map_width 
 background_canvas.height = foreground_canvas.height = fx_canvas.height = map_height * scale;
 
 var tileset = document.createElement("img");
-tileset.onload = draw_background;
 tileset.src = "tileset.png";
-tileset.onerror = function() { alert("Error loading image. Reload the page."); };
-if(tileset.complete) { draw_background(); }
+if(tileset.complete) {
+	draw_background();
+} else {
+	tileset.addEventListener("load", draw_background);
+	tileset.addEventListener("error", function(err) {
+		alert("Error loading tileset. Please reload the page.\n" + err);
+	});
+}
 
 function draw_background() {
 	var castle;
@@ -142,15 +157,15 @@ function depreciate(value) {
 function element_name(t) {
 	if(t === "n")	return "NEUTRAL";
 	if(t === "f")	return "FIRE";
-	if(t === "a")	return "WATER";
-	if(t === "t")	return "EARTH";
+	if(t === "w")	return "WATER";
+	if(t === "e")	return "EARTH";
 }
 
 function element_color(t) {
 	if(t === "n")	return "#888888";
 	if(t === "f")	return "#ff0000";
-	if(t === "a")	return "#0000ff";
-	if(t === "t")	return "#00ff00";
+	if(t === "w")	return "#0000ff";
+	if(t === "e")	return "#00ff00";
 }
 
 function tile(cx, orig, dest, width, height) {
@@ -162,6 +177,14 @@ function tile(cx, orig, dest, width, height) {
 	             width, height,
 	             dest[0] * scale, dest[1] * scale,
 	             width, height);
+}
+
+function image(cx, image, orig, dest) {
+	cx.drawImage(image,
+	             orig[0] * scale, orig[1] * scale,
+	             scale, scale,
+	             dest[0] * scale, dest[1] * scale,
+	             scale, scale);
 }
 
 function icon(cx, offset, dest) {
@@ -243,6 +266,28 @@ function circle(cx, corner, radius, color) {
 	cx.fill();
 }
 
+function round_rect(cx, dest, width, height, radius, color) {
+	if(color) cx.fillStyle = color;
+	cx.beginPath();
+	cx.arc((dest[0] + radius) * scale, (dest[1] + radius) * scale,
+	       radius * scale, Math.PI, 3 * Math.PI / 2);
+	cx.arc((dest[0] + width - radius) * scale, (dest[1] + radius) * scale,
+	       radius * scale, 3 * Math.PI / 2, 2 * Math.PI);
+	cx.arc((dest[0] + width - radius) * scale, (dest[1] + height - radius) * scale,
+	       radius * scale, 0, Math.PI / 2);
+	cx.arc((dest[0] + radius) * scale, (dest[1] + height - radius) * scale,
+	       radius * scale, Math.PI / 2, Math.PI);
+	cx.fill();
+}
+
+function frame_text(cx, string, dest, height, bgcolor, textcolor, font) {
+	var width = text_width(cx, string, font),
+		padding = pixels(4);
+	
+	round_rect(cx, dest, width + padding * 2, height + padding * 2, padding, bgcolor || "white");
+	text(cx, string, [dest[0] + padding, dest[1] + padding], textcolor || "black");
+}
+
 /*----------  Animaciones lineales para valores  ----------*/
 
 function ease_out_animation(from, to, time) {
@@ -275,7 +320,7 @@ function delay_animation(initial_value, delay, animation) {
 var state,
 	menu, 						//state = 0
 	instructions,				//state = 1
-	game, render, toolbar;	//state = 2
+	game, render, toolbar;		//state = 2
 
 
 /*=====  End of ESTADO Y VARIABLES DE ESTADO  ======*/
@@ -294,6 +339,7 @@ menu.load = function() {
 	state = 0;
 	foreground.textAlign = "left";
 	foreground.textBaseline = "top";
+	game.difficulty = Number(localStorage.getItem("difficulty"));
 };
 
 menu.frame = function(frame) {
@@ -305,12 +351,17 @@ menu.frame = function(frame) {
 	line(foreground, [2, 3.75], [3, 3.75], "red", 2);
 	line(foreground, [3, 3.75], [6, 3.75], "#00ff00");
 	line(foreground, [6, 3.75], [9, 3.75], "#0000ff");
-	//gradually show line animation (only first time)
+	//gradually show line animation (only one time)
 	rect(foreground, [9, 3], menu.show_line(frame), 1, "white");
 	//
 	draw_entities(menu.entities);
 	//circle for difficulty
 	circle(foreground, [2.25 - pixels(2), 5 - pixels(2) + .5 * game.difficulty], pixels(2.5), "black");
+};
+
+menu.change_difficulty = function(set) {
+	game.difficulty = set;
+	localStorage.setItem("difficulty", set);
 };
 
 function menu_text_button(string, dest, fontcolor, fontsize, onclick) {
@@ -326,16 +377,17 @@ function menu_text_button(string, dest, fontcolor, fontsize, onclick) {
 
 menu.entities.push(
 	menu_text_button("Play", [2, 4.25], "black", 14, function() {
+		menu.show_line = function() { return 0; };
 		game.load();
 	}),
 	menu_text_button("Easy", [2.5, 5 - pixels(4)], "black", 12, function() {
-		game.difficulty = 0;
+		menu.change_difficulty(0);
 	}),
 	menu_text_button("Medium", [2.5, 5.5 - pixels(4)], "black", 12, function() {
-		game.difficulty = 1;
+		menu.change_difficulty(1);
 	}),
 	menu_text_button("Hard", [2.5, 6 - pixels(4)], "black", 12, function() {
-		game.difficulty = 2;
+		menu.change_difficulty(2);
 	}),
 	menu_text_button("Instructions", [2, 6.5], "black", 14, function() {
 		instructions.load();
@@ -357,7 +409,7 @@ instructions.load = function() {
 	foreground.textBaseline = "top";
 };
 
-instructions.frame = function() {
+instructions.frame = function(frame) {
 	clear(foreground);
 	clear(fx);
 	//
@@ -366,7 +418,10 @@ instructions.frame = function() {
 	line(foreground, [2, 3.75], [3, 3.75], "red");
 	line(foreground, [3, 3.75], [6, 3.75], "#00ff00");
 	line(foreground, [6, 3.75], [9, 3.75], "#0000ff");
-	text(foreground, "1. Buy towers to defend the cas_", [2, 4.25], undefined, 12);
+	//gradually show line animation (one time only)
+	rect(foreground, [9, 3], menu.show_line(frame), 1, "white");
+
+	text(foreground, "1. Buy towers to defend the cas_", [2, 4.25], "black", 12);
 	text(foreground, "tle from your enemies.", [2, 4.75]);
 	text(foreground, "2. Upgrade a tower to fire ele_", [2, 5.5]);
 	text(foreground, "ment in order to defeat fire ene_", [2, 6]);
@@ -456,13 +511,17 @@ game = {
 	time: 0,
 	level: undefined,
 	level_number: 0,
+	level_time: 0,
+	level_events: [],
+	level_finished: false,
 	gold: 0,
 	lives: 0,
 	tower_map: [],
 	enemies: [],
 	explosions: [],
 	floating_texts: [],
-	beams: [], //proyectiles from towers
+	entities: [],
+	beams: [], //projectiles from towers
 	speed: 0,
 	state: 0,
 	selected_tower: undefined
@@ -470,22 +529,21 @@ game = {
 
 game.load = function() {
 	state = 2;
-	//(Re)set game defaults
+	//reset game defaults
 	with(game) {
-		gold_multiplier = 2 - difficulty * 0.5;
-		time = 0;
-		level = LEVELS[0];
-		level_number = 0;
-		gold = 30;
-		lives = 10 - difficulty * 5;
-		tower_map = [];
-		enemies = [];
-		explosions = [];
-		floating_texts = [];
-		beams = [];
-		speed = 1;
-		state = 0;
-		selected_tower = undefined;
+		gold_multiplier		=	1.5 - difficulty * .25;
+		time				=	0;
+		gold				=	30;
+		lives				=	10 - difficulty * 5;
+		tower_map			=	[];
+		enemies				=	[];
+		explosions			=	[];
+		floating_texts		=	[];
+		entities 			=	[];
+		beams				=	[];
+		speed				=	1;
+		state				=	0;
+		selected_tower		=	undefined;
 		
 		for(var y = 0; y < map_height; y++) {
 			tower_map.push([]);
@@ -500,60 +558,221 @@ game.load = function() {
 		}
 	}
 	
+	game.load_level(0);
 	toolbar.load();
 };
 
 game.frame = function(frame) {
-	game.time += frame * game.speed;
+	var x 			= Math.floor(mouse.x),
+		y 			= Math.floor(mouse.y),
+		game_frame	= frame * game.speed,
+		explosion, tower, line, enemy, beam,
+		destination, step, event, i, distance,
+		element, floating_text;
 	
-	var x = Math.floor(mouse.x),
-		y = Math.floor(mouse.y),
-		tower;
+	/*----------  Time  ----------*/
 	
-	/*----------  Buy a tower  ----------*/
+	game.time 		+= game_frame;
+	game.level_time += game_frame;
 	
-	if(toolbar.buying_tower !== undefined && click) {
-		tower = TOWERS[toolbar.buying_tower];
+	/*----------  On level finished  ----------*/
+	
+	if(game.level_finished && !game.enemies.length && !game.explosions.length) {
+		game.load_level(game.level_number + 1);
+	}
+
+	/*----------  Buy and select towers  ----------*/
+	
+	if(click) {
 		
-		if(x > 10 && y < 7) {
-			//Clicking on toolbar or castle while buying a tower
-			toolbar.buying_tower = undefined;
+		// Buy
+		if(toolbar.buying_tower !== undefined) {
+			tower = TOWERS[toolbar.buying_tower];
 			
-		} else if(game.gold >= tower.price && game.tower_map[y] &&
-		          game.tower_map[y][x] === false) {
+			if(game.gold >= tower.price && game.tower_map[y] &&
+			          game.tower_map[y][x] === false) {
+				
+				game.gold -= tower.price;
+				toolbar.buying_tower = undefined;
+				toolbar.hide_elements_timer = 0;
+				
+				tower = Object.create(tower);
+				tower.x = x;
+				tower.y = y;
+				tower.price = depreciate(tower.price);
+				tower.load_progress = 0;
+				
+				game.tower_map[y][x] = game.selected_tower = tower;
+			} else if(x < 11 || y > 3.25) {
+				toolbar.buying_tower = undefined;
+			}
 			
-			game.gold -= tower.price;
-			toolbar.buying_tower = undefined;
-			
-			tower = Object.create(tower);
-			tower.x = x;
-			tower.y = y;
-			tower.price = depreciate(tower.price);
-			tower.load_progress = 0;
-			
-			game.tower_map[y][x] = game.selected_tower = tower;
-		}
-	} else if (click) {
-	
-	/*----------  Select a tower  ----------*/
-		
-		if(game.tower_map[y] && game.tower_map[y][x]) {
-			game.selected_tower = game.tower_map[y][x];
-		} else if(x < 11 || y > 6) {
-			game.selected_tower = undefined;
+		//Select
+		} else {
+			if(game.tower_map[y] && game.tower_map[y][x]) {
+				game.selected_tower = game.tower_map[y][x];
+				toolbar.hide_elements_timer = 0;
+			} else if(x < 11) {
+				game.selected_tower = undefined;
+			}
 		}
 	}
 	
-	/*----------  Make towers fire proyectiles  ----------*/
+	if(escape) {
+		toolbar.buying_tower = game.selected_tower = undefined;
+	}
 	
-	for(y = 0; y < game.tower_map.length; y++) {
-		var line = game.tower_map[y];
-		for(x = 0; x < line.length; x++) {
-			tower = line[x];
-			if(tower) {
-				tower.load_progress = Math.min(tower.load_time, tower.load_progress + frame);
+	if(game.speed) {
+	
+	/*----------  Trigger level events  ----------*/
+		
+		if(game.level_events[0] && game.level_events[0].time <= game.level_time) {
+			event = game.level_events.shift();
+			event.action.apply(game, event.arguments);
+		}
+
+	/*----------  Make enemies move  ----------*/
+		
+		for(i = 0; i < game.enemies.length; i += 1) {
+			enemy = game.enemies[i],
+			destination = path[enemy.going_to],
+			step = pixels(enemy.speed * game_frame);
+			
+			["x", "y"].forEach(function(axis, n) {
+				if(enemy[axis] !== destination[n]) {
+					if(Math.abs(enemy[axis] - destination[n]) <= step) {
+						enemy[axis] = destination[n];
+						enemy.going_to += 1;
+						game.set_enemy_facing(enemy);
+					} else {
+						enemy[axis] += (enemy[axis] < destination[n] ? 1 : -1) * step;
+					}
+				}
+			});
+			
+			if(enemy.going_to === path.length) {
+				//Enemy crashes in the castle and explodes
+				game.enemies.splice(i, 1);
+				i -= 1;
+				
+				game.explosions.push({
+					x: enemy.x,
+					y: enemy.y,
+					time: 0
+				});
+				
+				game.lose_live();
+			}
+			
+	/*----------  Enemy time  ----------*/
+			
+			enemy.time += game_frame;
+			enemy.frame = Math.floor(enemy.time * enemy.fps) % enemy.frames.length;
+	
+		}
+	
+	/*----------  Make towers fire beams  ----------*/
+	
+		for(y = 0; y < game.tower_map.length; y += 1) {
+			line = game.tower_map[y];
+			for(x = 0; x < line.length; x++) {
+				tower = line[x];
+				if(tower) {
+					tower.load_progress = Math.min(tower.load_time, tower.load_progress + game_frame);
+					
+					if(tower.load_progress === tower.load_time) {
+						for(i = 0; i < game.enemies.length; i += 1) {
+							enemy = game.enemies[i];
+							element = enemy.life[enemy.life.length - 1];
+							
+							if(tower.element === element) {
+								//distance squared
+								distance = Math.pow(x - enemy.x, 2) + Math.pow(y - enemy.y, 2);
+								
+								if(distance <= Math.pow(tower.range + .5, 2)) {
+									//Fire
+									tower.load_progress = 0;
+									enemy.life = enemy.life.slice(0, -1);
+									
+									game.beams.push({
+										x: tower.x + pixels(tower.beam_origin[0]),
+										y: tower.y - 1 + pixels(tower.beam_origin[1]),
+										time: 0,
+										element: element,
+										target: enemy,
+										display_life: enemy.life
+									});
+									break; //breaks the enemy loop
+								}
+							}
+						}
+					}
+				}
 			}
 		}
+		
+	/*----------  Explosions grow and die  ----------*/
+		
+		for(i = 0; i < game.explosions.length; i += 1) {
+			explosion = game.explosions[i];
+			
+			explosion.time += game_frame;
+			
+			if(explosion.time > 0.5) {
+				game.explosions.splice(i, 1);
+				i -= 1;
+			}
+		}
+		
+	/*----------  Beams hit their target  ----------*/
+		
+		for(i = 0; i < game.beams.length; i += 1) {
+			beam = game.beams[i];
+			
+			beam.time += game_frame;
+			
+			if(beam.time > 0.3) {
+				game.beams.splice(i, 1);
+				i -= 1;
+				
+				enemy = beam.target;
+				enemy.display_life = beam.display_life;
+				
+				if(!enemy.display_life) {
+					//Enemy is killed
+					game.enemies.splice(game.enemies.indexOf(enemy), 1);
+					
+					game.explosions.push({
+						x: enemy.x,
+						y: enemy.y,
+						time: 0
+					});
+					
+					game.floating_texts.push({
+						x: enemy.x + Math.floor(Math.random() * .5),
+						y: enemy.y + Math.floor(Math.random() * .25),
+						string: String(Math.floor(enemy.gold * game.gold_multiplier)),
+						time: 0
+					});
+					
+					game.gold += Math.floor(enemy.gold * game.gold_multiplier);
+				}
+			}
+		}
+		
+	/*----------  Floating texts rise up and dissapear  ----------*/
+		
+		for(i = 0; i < game.floating_texts.length; i += 1) {
+			floating_text = game.floating_texts[i];
+			
+			floating_text.time += game_frame;
+			
+			if(floating_text.time > 1) {
+				game.floating_texts.splice(i, 1);
+				i -= 1;
+			}
+		}
+		
 	}
 };
 
@@ -582,11 +801,95 @@ game.buy_element = function(t) {
 	
 	if(game.gold >= 20) {
 		game.gold -= 20;
-		tower.type = t;
+		tower.element = t;
 		tower.load_progress = Math.min(tower.load_time / 2, tower.load_progress);
 		tower.price += depreciate(20);
 	}
 };
+
+game.load_level = function(n) {
+
+	with(game) {
+		level 		 	= LEVELS[n];
+		level_number 	= n;
+		level_time 	 	= 0;
+		level_events 	= [];
+		level_finished	= false;
+	}
+	
+	if(!game.level) {
+		return game.win();
+	}
+	
+	//Level events
+	
+	var current_time = game.level.start_time;
+	
+	game.level.waves.forEach(function(wave) {
+		if(typeof wave === "number") {
+			current_time += wave;
+		} else {
+			
+			var amount	= wave[0],
+				enemy 	= wave[1],
+				delay	= wave[2];
+			
+			for(var i = 0; i < amount; i++) {
+				game.level_events.push({
+					time: current_time,
+					action: game.create_enemy,
+					arguments: [enemy]
+				});
+				
+				current_time += delay;
+			}
+		}
+	});
+	
+	game.level_events.push({
+		time: current_time,
+		action: function() {
+			game.level_finished = true;
+		},
+		arguments: []
+	});
+};
+
+game.create_enemy = function(enemy) {
+	game.enemies.push(extend(enemy, {
+		x: 				path[0][0],
+		y: 				path[0][1],
+		going_to: 		1,			//going to path[1]
+		time: 			0,
+		frame: 			0,			//current frame
+		facing: 		0,			//0 is right, 1 is left
+		display_life: 	enemy.life,
+		beam_count: 	0			//beams that are currently hitting the enemy
+	}));
+};
+
+game.set_enemy_facing = function(enemy) {
+	var new_destination = path[enemy.going_to];
+	
+	if(new_destination) {
+		if(enemy.x === new_destination[0] && path[enemy.going_to + 1]) {
+			enemy.facing = enemy.x < path[enemy.going_to + 1][0] ? 0 : 1;
+		} else {
+			enemy.facing = enemy.x < new_destination[0] ? 0 : 1;
+		}
+	}
+};
+
+game.lose_live = function() {
+	game.lives -= 1;
+	if(game.lives === -1) {
+		game.lose();
+	}
+};
+
+game.lose = function() {};
+
+game.win = function() {};
 
 /*=====  End of JUEGO PROPIAMENTE DICHO  ======*/
 
@@ -603,13 +906,13 @@ render.frame = function(frame_time) {
 	
 	var x = Math.floor(mouse.x), //mouse x and y
 		y = Math.floor(mouse.y),
-		tower, i, j;
+		tower, i, j, my, mx;
 	
 	/*----------  Draw selected tower range  ----------*/
 	
 	if(game.selected_tower) {
 		tower = game.selected_tower;
-		render.tower_radius(foreground, tower, [tower.x, tower.y], ".15");
+		render.tower_radius(foreground, tower, [tower.x, tower.y], "rgba(125,125,255,.15)");
 		rect(foreground, [tower.x, tower.y], 1, 1, "rgba(125,125,255,.3)");
 	}
 	
@@ -619,9 +922,21 @@ render.frame = function(frame_time) {
 		rect(foreground, [x, y], 1, 1, "rgba(125,125,255,.2)");
 	}
 	
+	/*----------  Draw enemies  ----------*/
+	
+	for(i = 0; i < game.enemies.length; i++) {
+		render.enemy(foreground, game.enemies[i]);
+	}
+	
+	/*----------  Draw explosions  ----------*/
+	
+	for(i = 0; i < game.explosions.length; i++) {
+		var explosion = game.explosions[i];
+		tile(foreground, [6 + Math.floor(explosion.time * 8), 0], [explosion.x, explosion.y]);
+	}
+	
 	/*----------  Draw all towers  ----------*/
 	
-	var mx, my; //map x and y
 	for(my = 1; my < map_height - 1; my++) {
 		for(mx = 0; mx < 11; mx++) {
 			tower = game.tower_map[my][mx];
@@ -630,20 +945,43 @@ render.frame = function(frame_time) {
 			}
 		}
 	}
+	
+	/*----------  Draw enemy's life  ----------*/
+	
+	for(i = 0; i < game.enemies.length; i++) {
+		var enemy = game.enemies[i];
+		render.life(foreground, enemy.display_life, [enemy.x, enemy.y]);
+	}
+	
+	/*----------  Draw floating texts  ----------*/
+	
+	for(i = 0; i < game.floating_texts.length; i++) {
+		var text = game.floating_texts[i];
 		
+		foreground.globalAlpha = (1 - text.time).toFixed(2);
+		
+		icon_text(foreground, [3, 2], text.string, [text.x, text.y - text.time], "black", "bold 10");
+	}
+	foreground.globalAlpha = 1;
+	
+	/*----------  Draw beams  ----------*/
+	
+	for(i = 0; i < game.beams.length; i++) {
+		var beam = game.beams[i];
+		
+		line(fx, [beam.x, beam.y], [beam.target.x + .5, beam.target.y + .5],
+		     element_color(beam.element), Math.sin(beam.time * Math.PI / 0.3) * 2);
+	}
+	
 	/*----------  Draw the tower that you are buying  ----------*/
 	
 	if(toolbar.buying_tower !== undefined) {
 		tower = TOWERS[toolbar.buying_tower];
-		
+
 		if(game.tower_map[y] && game.tower_map[y][x] === false) {
-			//Terrain is available for buying a tower
-			render.tower_radius(fx, tower, [x, y], ".2");
-			render.tower(fx, tower, [x, y]);
-		} else {
-			//Terrain is not available for buying a tower
-			render.tower(fx, tower, [mouse.x - .5, mouse.y - .5]);
+			render.tower_radius(fx, tower, [mouse.x - .5, mouse.y - .5], "rgba(125,125,255,.2)");
 		}
+		render.tower(fx, tower, [mouse.x - .5, mouse.y - .5]);
 	}
 }
 
@@ -655,7 +993,7 @@ render.tower = function(cx, tower, dest) {
 			region = tower.load_region;
 		
 		rect(cx, [dest[0] + pixels(region[0]), dest[1] - 1 + pixels(region[1])],
-		     pixels(region[2]) * progress, pixels(region[3]), element_color(tower.type));
+		     pixels(region[2]) * progress, pixels(region[3]), element_color(tower.element));
 	}
 	
 	var offset = tower.upgrade_offset;
@@ -664,13 +1002,43 @@ render.tower = function(cx, tower, dest) {
 		icon(cx, [3, 1],
 		     [dest[0] + pixels(offset[0]), dest[1] - 1 + pixels(offset[1]) + pixels(9 * i)]);
 	}
-}
+};
 
-render.tower_radius = function(cx, tower, dest, opacity) {
+render.tower_radius = function(cx, tower, dest, color) {
 	circle(cx, [dest[0] - tower.range, dest[1] - tower.range],
-	       tower.range + .5, "rgba(125,125,255," + opacity + ")");
-}
+	       tower.range + .5, color);
+};
 
+render.enemy = function(cx, enemy) {
+	image(cx, enemy.canvas, [enemy.frame, enemy.facing], [enemy.x, enemy.y]);
+};
+
+render.life = function(cx, life, dest) {
+	/* Life size: 3 + 1px margin, Max lifes per row: 8 */
+	var rows = Math.floor(life.length / 8),
+		height = pixels(rows * 4),
+		last_row = life.length % 8,
+		i, j;
+	
+	if(rows) {
+		rect(cx, [dest[0] - pixels(1), dest[1] - height - pixels(1)],
+		     1 + pixels(1), height + pixels(1), "black");
+		for(i = 0; i < rows; i += 1) {
+			for(j = 0; j < 8; j++) {
+				rect(cx, [dest[0] + pixels(j * 4), dest[1] - pixels(i * 4 + 4)],
+				     pixels(3), pixels(3), element_color(life[i * 8 + j]));
+			}
+		}
+	}
+	if(last_row) {
+		rect(cx, [dest[0] - pixels(1), dest[1] - height - pixels(5)],
+		     pixels(4 * last_row + 1), pixels(5), "black");
+		for(j = 0; j < last_row; j += 1) {
+			rect(cx, [dest[0] + pixels(j * 4), dest[1] - height - pixels(4)],
+			     pixels(3), pixels(3), element_color(life[rows * 8 + j]));
+		}
+	}
+};
 
 /*=====  End of RENDERIZADOR DEL JUEGO  ======*/
 
@@ -682,7 +1050,8 @@ render.tower_radius = function(cx, tower, dest, opacity) {
 toolbar = {
 	buttons: [],
 	selected_buttons: [],
-	buying_tower: undefined
+	buying_tower: undefined,
+	hide_elements_timer: 0
 };
 
 toolbar.load = function() {
@@ -695,47 +1064,47 @@ toolbar.frame = function(frame) {
 	
 	var tower;
 	//white rect
-	rect(foreground, [11, 0], 4, 3 + pixels(8), "white");
+	rect(foreground, [11, 0], 4, 3 + pixels(7), "white");
 	//lives and gold
 	icon_text(foreground, [2, 0], game.lives, [13, .25], "black", "bold 10");
 	icon_text(foreground, [1, 0], game.gold, [14, .25]);
 	//Divisor line
-	line(foreground, [11, 0.5 + pixels(10)], [11.5, 0.5 + pixels(10)], "red");
-	line(foreground, [11.5, 0.5 + pixels(10)], [13, 0.5 + pixels(10)], "#00ff00");
-	line(foreground, [12.5, 0.5 + pixels(10)], [15, 0.5 + pixels(10)], "#0000ff");
+	line(foreground, [11, 0.5 + pixels(9)], [11.5, 0.5 + pixels(9)], "red", 2);
+	line(foreground, [11.5, 0.5 + pixels(9)], [12.5, 0.5 + pixels(9)], "#00ff00");
+	line(foreground, [12.5, 0.5 + pixels(9)], [15, 0.5 + pixels(9)], "#0000ff");
 	//Buy towers, speed control
 	draw_entities(toolbar.buttons);
 	//Divisor line
-	line(foreground, [11, 3 + pixels(6)], [11.5, 3 + pixels(6)], "red");
-	line(foreground, [11.5, 3 + pixels(6)], [13, 3 + pixels(6)], "#00ff00");
-	line(foreground, [12.5, 3 + pixels(6)], [15, 3 + pixels(6)], "#0000ff");
+	line(foreground, [11, 3 + pixels(5)], [11.5, 3 + pixels(5)], "red", 2);
+	line(foreground, [11.5, 3 + pixels(5)], [12.5, 3 + pixels(5)], "#00ff00");
+	line(foreground, [12.5, 3 + pixels(5)], [15, 3 + pixels(5)], "#0000ff");
 	
 	/*----------  With a tower selected  ----------*/
 	
 	if(game.selected_tower) {
 
 		//white rect
-		rect(foreground, [11, 3 + pixels(8)], 4, 4 - pixels(8), "white");
-
+		rect(foreground, [11, 3 + pixels(6)], 4, 4 - pixels(6), "white");
+		
 		/*----------  Draw tower and tower info  ----------*/
 		
 		tower = game.selected_tower;
-		tile(foreground, [2, 0], [11 + pixels(4), 4.25]);
-		render.tower(foreground, tower, [11 + pixels(4), 4.25]);
-		toolbar.draw_tower_info(foreground, tower, [12 + pixels(4), 3.25]);
+		tile(foreground, [2, 0], [11.25, 4.75]);
+		render.tower(foreground, tower, [11.25, 4.75]);
+		toolbar.draw_tower_info(foreground, tower, [12.25, 3.5]);
 		
-		var name = element_name(tower.type),
+		var name = element_name(tower.element),
 			name_width = text_width(foreground, name + " ", "bold 10");
 		
-		text(foreground, name, [12 + pixels(4), 3.25 + pixels(6)], element_color(tower.type));
-		text(foreground, tower.material, [12 + pixels(4) + name_width, 3.25 + pixels(6)], "black");
+		text(foreground, name, [11.25, 3.5], element_color(tower.element));
+		text(foreground, tower.material, [11.25 + name_width, 3.5], "black");
 		
-		/*----------  Sell, upgrade and element info  ----------*/
+		/*----------  Sell, upgrade and element  ----------*/
 		
 		if(tower.level < 4) {
 			draw_entities(toolbar.upgrade_button);
 		}
-		if(tower.type === "n") {
+		if(tower.element === "n") {
 			if(toolbar.hide_elements_timer > 0) {
 				draw_entities(toolbar.element_buttons);
 			}
@@ -744,15 +1113,30 @@ toolbar.frame = function(frame) {
 		} else {
 			text(foreground, "This tower will only", [11 + pixels(4), 6 + pixels(4)], "gray");
 			text(foreground, "attack ", [11 + pixels(4), 6.5 + pixels(4)]);
-			text(foreground, element_name(tower.type).toLowerCase(),
+			text(foreground, element_name(tower.element).toLowerCase(),
 			     [11 + pixels(4) + text_width(foreground, "attack "), 6.5 + pixels(4)],
-			     element_color(tower.type));
+			     element_color(tower.element));
 			text(foreground, " enemies",
-			     [11 + pixels(4) + text_width(foreground, "attack " + element_name(tower.type)), 6.5 + pixels(4)],
+			     [11 + pixels(4) + text_width(foreground, "attack " + element_name(tower.element)), 6.5 + pixels(4)],
 			     "gray");
 		}
 		draw_entities(toolbar.sell_button);
 	}
+	
+	/*----------  Level info  ----------*/
+	
+	if(game.level) {
+		
+		var global_alpha = Math.min(1, Math.max(0.7, 1 + (mouse.y - 12.5) / 4));
+		
+		var end = toolbar.draw_level_info(game.level, game.level_time, 0.25, 10.75, 12.5, global_alpha);
+		
+		if(end < 8 && LEVELS[game.level_number + 1]) {
+			toolbar.draw_level_info(LEVELS[game.level_number + 1], 0,
+			                        Math.max(0.25, end + 2), 10.75, 12.5, global_alpha, true);
+		}
+	}
+	
 };
 
 function rectangular_button(draw_content, dest, width, height, onclick) {
@@ -809,6 +1193,83 @@ toolbar.select_tower = function(n) {
 	}
 };
 
+toolbar.draw_level_info = function(level, level_time, start, end, y, global_alpha, next) {
+	
+	foreground.globalAlpha = global_alpha;
+	
+	var time = level.start_time,
+		height = undefined,
+		name_width = text_width(foreground, level.name) + pixels(8),
+		i, j, wave, amount, enemy, delay, x, radius, first, length,
+		first = true, final_x;
+	
+	wave_loop:
+	for(i = 0; i < level.waves.length; i += 1) {
+		wave = level.waves[i];
+		
+		if(typeof wave === "number") {
+			time += wave;
+			continue;
+		}
+		
+		amount = wave[0];
+		enemy = wave[1];
+		delay = wave[2];
+		
+		for(j = 0; j < amount; j += 1) {
+			x = (time - level_time) * 0.3;
+			
+			if(x > end - start) {
+				break wave_loop;
+			}
+			
+			if(x > 0) {
+				radius = pixels(j === 0 ? 3 : 2);
+				circle(foreground, [start + x - radius, y - radius],
+				       radius, "black");
+				
+				if(j === 0 || first) {
+					render.life(foreground, enemy.life,
+					            [j === 0 ? start + x : start, y - .25]);
+					
+					if(first) {
+						length = enemy.life.length;
+						height = pixels( Math.floor(length / 8) * 4 + (length % 8 ? 4 : 0) );
+					}
+					first = false;
+				}
+				
+			} else if(x > -1 && j === amount - 1) {
+				foreground.globalAlpha = ((1 + x) * global_alpha).toFixed(2);
+				render.life(foreground, enemy.life, [start, y - .25]);
+				foreground.globalAlpha = 1 * global_alpha;
+			}
+			time += delay;
+		}
+	}
+	
+	final_x = (time - level_time) * 0.3
+	
+	if(height === undefined) {
+		length = enemy.life.length;
+		height = pixels( Math.floor(length / 8) * 4 + (length % 8 ? 4 : 0) );
+	}
+	
+	foreground.globalAlpha = (x < 0 ? (x > -1 ? 1 + x : 0) : 1) * global_alpha;
+	
+	line(foreground, [start, y], [Math.max(start, Math.min(start + final_x, end)), y], "black", 2);
+	frame_text(foreground, level.name, [start, y - height - 1], pixels(10), "black", "white", "10");
+	
+	if(next || level_time < 1) {
+		foreground.globalAlpha = (1 - level_time) * global_alpha;
+		frame_text(foreground, "NEXT", [start, y - height - 1 - pixels(16)], pixels(8), "red", "white", "bold 8");
+	}
+	
+	foreground.globalAlpha = 1;
+	
+	return start + final_x;
+};
+
 /*----------  Quit and buy tower buttons  ----------*/
 
 //Quit
@@ -828,10 +1289,10 @@ toolbar.buttons.push({
 			//displays tower info
 			if(hover) {
 				var tower = TOWERS[n];
-				toolbar.draw_tower_info(foreground, tower, [14, 1],
+				toolbar.draw_tower_info(foreground, tower, [14, y],
 				                   game.gold < tower.price ? "#770000" : undefined);
 				
-				text(foreground, tower.material, [14 + pixels(1), 1 + pixels(6)], "black", "bold 10");
+				text(foreground, tower.material, [14 + pixels(1), y + pixels(6)], "black", "bold 10");
 			}
 			//draws tower
 			tile(foreground, [4 + n, 1], [x, y], 1, 2);
@@ -846,12 +1307,12 @@ toolbar.buttons.push({
 //Sell	
 toolbar.sell_button = [
 	rectangular_button(function(x, y, hover) {
-		text(foreground, "SELL", [x + .5, y + pixels(4)], hover ? "#700" : "gray", 10);
+		text(foreground, "SELL", [x + .5, y + pixels(4)], hover ? "black" : "gray", 10);
 		if(hover) {
 			icon_text(foreground, [3, 2], game.selected_tower.price,
-			          [12 + pixels(6), 3.75 + pixels(4)], hover ? "black" : "gray");
+			          [x - 1 + pixels(6), y + pixels(4)], "black");
 		}
-	}, [13, 3.75], 1.75, .5, game.sell_tower)
+	}, [13 + pixels(4), 4], 1.75, .5, game.sell_tower)
 ];
 
 //Upgrade
@@ -867,10 +1328,10 @@ toolbar.upgrade_button = [
 		if(hover) {
 			var load_time = toolbar.format_load_time(tower.load_time / 2);
 			
-			rect(foreground, [12 + pixels(4), 4.25], .5, .5, "white");
-			icon_text(foreground, [0, 0], load_time, [12 + pixels(6), 4.25 + pixels(4)], "#070");
+			rect(foreground, [x - 1 + pixels(4), y], 1 - pixels(4), .5, "white");
+			icon_text(foreground, [2, 2], load_time, [x - 1 + pixels(6), y + pixels(4)], "#070");
 		}
-	}, [13, 4.25], 1.75, 1, game.upgrade_tower)
+	}, [13 + pixels(4), 4.5], 1.75, 1, game.upgrade_tower)
 ];
 
 //Buy element
@@ -878,7 +1339,8 @@ toolbar.buy_element_button = [
 	rectangular_button(function(x, y, hover) {
 
 		if(toolbar.hide_elements_timer > 0) {
-			rect(foreground, [x, y], 1.75, 1, "#eee");
+			var alpha = Math.min(toolbar.hide_elements_timer, 0.1) * 10;
+			rect(foreground, [x, y], 1.75, 1, "rgba(230, 230, 230, " + alpha.toFixed(2) + ")");
 		}
 
 		var is_selected = hover || toolbar.hide_elements_timer > 0;
@@ -888,119 +1350,435 @@ toolbar.buy_element_button = [
 		icon_text(foreground, [1, 0], "20", [x + .75 + pixels(2), y + .5 + pixels(2)],
 		          game.gold < 20 && is_selected ? "#700" : undefined);
 		
-	}, [13, 5.25], 1.75, 1, function() {
-		if(game.gold >= 20)
-			toolbar.hide_elements_timer = 3;
+	}, [13 + pixels(4), 5.5], 1.75, 1, function() {
+		if(game.gold >= 20 && toolbar.hide_elements_timer < 0) {
+			toolbar.hide_elements_timer = 2;
+		}
 	})
 ];
 
+function buy_element_button(x, element, blur_color) {
+	return rectangular_button(function(x, y, hover) {
+		if(toolbar.hide_elements_timer > 1.9) {
+			y -= (toolbar.hide_elements_timer - 1.9) / .1 * .5
+		} else if(toolbar.hide_elements_timer < .1) {
+			y -= (.1 - toolbar.hide_elements_timer) / .1 * .5;
+		}
+		
+		rect(foreground, [x + pixels(4), y + pixels(4)], pixels(8), pixels(8),
+		     hover ? element_color(element) : blur_color);
+
+		if(hover) {
+			toolbar.hide_elements_timer = 1.9;
+		}
+	}, [x, 6.5], .5, .5, function() {
+		game.buy_element(element);
+	});
+}
+
 toolbar.element_buttons = [
-	rectangular_button(function(x, y, hover) {
-		if(toolbar.hide_elements_timer > 2.9) {
-			y -= (toolbar.hide_elements_timer - 2.9) / .1 * .5
-		} else if(toolbar.hide_elements_timer < .1) {
-			y -= (.1 - toolbar.hide_elements_timer) / .1 * .5;
-		}
-
-		rect(foreground, [x + pixels(4), y + pixels(4)],
-			pixels(8), pixels(8), hover ? "red" : "#faa");
-
-		if(hover) {
-			toolbar.hide_elements_timer = 2.9;
-		}
-	}, [13, 6.25], .5, .5, function() {
-		game.buy_element("f");
-	}),
-	rectangular_button(function(x, y, hover) {
-		if(toolbar.hide_elements_timer > 2.9) {
-			y -= (toolbar.hide_elements_timer - 2.9) / .1 * .5
-		} else if(toolbar.hide_elements_timer < .1) {
-			y -= (.1 - toolbar.hide_elements_timer) / .1 * .5;
-		}
-
-		rect(foreground, [x + pixels(4), y + pixels(4)],
-			pixels(8), pixels(8), hover ? element_color("t") : "#afa");
-
-		if(hover) {
-			toolbar.hide_elements_timer = 2.9;
-		}
-	}, [13.625, 6.25], .5, .5, function() {
-		game.buy_element("t");
-	}),
-	rectangular_button(function(x, y, hover) {
-		if(toolbar.hide_elements_timer > 2.9) {
-			y -= (toolbar.hide_elements_timer - 2.9) / .1 * .5
-		} else if(toolbar.hide_elements_timer < .1) {
-			y -= (.1 - toolbar.hide_elements_timer) / .1 * .5;
-		}
-
-		rect(foreground, [x + pixels(4), y + pixels(4)],
-			pixels(8), pixels(8), hover ? element_color("a") : "#aaf");
-
-		if(hover) {
-			toolbar.hide_elements_timer = 2.9;
-		}
-	}, [14.25, 6.25], .5, .5, function() {
-		game.buy_element("a");
-	})
+	buy_element_button(13 + pixels(4), "f", "#faa"),
+	buy_element_button(13.625 + pixels(4), "e", "#afa"),
+	buy_element_button(14.25 + pixels(4), "w", "#aaf")
 ];
 
 /*----------  Speed control buttons  ----------*/
 
+function speed_control_button(n) {
+	return {
+		x: 12.5 + n * .75, y: 12.25,
+		width: .5, height: .5,
+		draw: function(x, y, hover) {
+			round_rect(foreground, [x, y], .5, .5, pixels(4),
+			           hover || game.speed === n ? "#bdbdff" : "white");
+			tile(foreground, [3 + n%2 * .5, n === 2 ? .5 : 0], [x, y], .5, .5);
+		},
+		onclick: function() {
+			game.speed = n;
+		}
+	};
+}
+
 toolbar.buttons.push(
-	
+	speed_control_button(0),
+	speed_control_button(1),
+	speed_control_button(2)
 );
 
 /*=====  End of BARRA DE HERRAMIENTAS DEL JUEGO  ======*/
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 /*========================================================
 =            DEFINICIÓN DE ENEMIGOS Y NIVELES            =
 ========================================================*/
 
-var ENEMIES, TOWERS, LEVELS = [];
+var ENEMIES = {}, TOWERS = [], LEVELS = [];
 
-TOWERS = [
+/*----------  TOWERS  ----------*/
+
+TOWERS.push(
 	{
 		index: 0,
-		type: "n",
+		element: "n",
 		material: "WOOD",
 		price: 20,
 		upgrade_price: 35,
 		load_time: 4,
 		range: 2,
 		level: 0,
-		projectile_offset: [16, 21],
+		beam_origin: [16, 21],
 		load_region: [10, 18, 12, 9],
 		upgrade_offset: [21, 12]
 	},
 	{
 		index: 1,
-		type: "n",
+		element: "n",
 		material: "STONE",
 		price: 35,
 		upgrade_price: 60,
 		load_time: 2,
 		range: 1,
 		level: 0,
-		projectile_offset: [16, 18],
+		beam_origin: [16, 18],
 		load_region: [12, 16, 8, 6],
 		upgrade_offset: [21, 8]
 	},
 	{
 		index: 2,
-		type: "n",
+		element: "n",
 		material: "STEEL",
 		price: 50,
 		upgrade_price: 90,
 		load_time: 3,
 		range: 4,
 		level: 0,
-		projectile_offset: [16, 6],
+		beam_origin: [16, 6],
 		load_region: [13, 11, 6, 3],
 		upgrade_offset: [20, 4]
 	}
-];
+);
+
+/*----------  ENEMIES  ----------*/
+
+function extend(proto, obj) {
+	return Object.assign(Object.create(proto), obj);
+}
+
+	/*----------  01 Beatles  ----------*/
+
+ENEMIES.beatle = {
+	//movement speed
+	speed: 40,
+	//reward
+	gold: 4,
+	//life
+	life: "n",
+	//animation fps
+	fps: 3.75,
+	//frames coordinates in tileset
+	frames: [[4, 0], [5, 0]]
+};
+
+ENEMIES.beatle_2 = extend(ENEMIES.beatle, { life: "nn", gold: 6 });
+
+ENEMIES.fire_beatle = extend(ENEMIES.beatle, { life: "nf", gold: 8, frames: [[4, 4], [5, 4]] });
+
+ENEMIES.fire_beatle_2 = extend(ENEMIES.fire_beatle, { life: "nnff", gold: 9 });
+
+	/*----------  02 Turtles  ----------*/
+
+ENEMIES.turtle = {
+	speed: 20,
+	gold: 10,
+	life: "ennn",
+	fps: 1.5,
+	frames: [[6, 4], [7, 4]]
+};
+
+ENEMIES.turtle_2 = extend(ENEMIES.turtle, { life: "eennn", gold: 12 });
+
+ENEMIES.turtle_3 = extend(ENEMIES.turtle, { life: "ennne", gold: 12 });
+
+	/*----------  03 Pigeons  ----------*/
+
+ENEMIES.pigeon = {
+	speed: 130,
+	gold: 5,
+	life: "n",
+	fps: 5,
+	frames: [[7, 2], [8, 2]]
+};
+
+ENEMIES.fire_pigeon = extend(ENEMIES.pigeon, { life: "f", gold: 6, frames: [[7, 3], [8, 3]] });
+
+ENEMIES.pigeon_2 = extend(ENEMIES.pigeon, { life: "nn", gold: 10 });
+
+	/*----------  04 Fishes  ----------*/
+
+ENEMIES.fish = {
+	speed: 55,
+	gold: 10,
+	life: "wnnnnnn",
+	fps: 8,
+	frames: [[8, 1], [9, 1], [10, 1], [10, 0]]
+};
+
+ENEMIES.fish_2 = extend(ENEMIES.fish, { life: "wwnnnnnn", gold: 12 });
+
+ENEMIES.earth_fish = extend(ENEMIES.fish, {
+	life: "wweennnn",
+	gold: 12,
+	frames: [[8, 4], [9, 4], [9, 3], [9, 2]]
+});
+
+ENEMIES.earth_fish_2 = extend(ENEMIES.earth_fish, { life: "wwweeennnn", gold: 14 });
+
+ENEMIES.fire_fish = extend(ENEMIES.fish, {
+	life: "wwwfffnnnn",
+	gold: 14,
+	frames: [[0, 5], [1, 5], [2, 5], [3, 5]]
+});
+
+ENEMIES.fire_fish_2 = extend(ENEMIES.fish, { life: "wfnwfnwfn" });
+
+ENEMIES.boss_fish = {
+	speed: 15,
+	gold: 70,
+	life: "wwwwffffeeeennnnwwwfffeeennn",
+	fps: 3,
+	frames: [[4, 5], [5, 5], [6, 5], [7, 5]]
+};
+
+	/*----------  05 Mosquitoes  ----------*/
+
+ENEMIES.mosquito = {
+	speed: 170,
+	gold: 3,
+	life: "n",
+	fps: 15,
+	frames: [[8, 5], [9, 5], [10, 5], [9, 5]]
+};
+
+ENEMIES.mosquito_2 = extend(ENEMIES.mosquito, { speed: 230, gold: 4 });
+
+ENEMIES.mosquito_3 = extend(ENEMIES.mosquito, { speed: 290, gold: 5 });
+
+ENEMIES.mosquito_4 = extend(ENEMIES.mosquito, { speed: 320, gold: 5 });
+
+ENEMIES.water_mosquito = extend(ENEMIES.mosquito, { life: "w", gold: 4 });
+
+ENEMIES.earth_mosquito = extend(ENEMIES.mosquito, { life: "e", gold: 4 });
+
+ENEMIES.fire_mosquito = extend(ENEMIES.mosquito, { life: "f", gold: 4 });
+
+	/*----------  06 Slugs  ----------*/
+
+ENEMIES.slug_proto = { speed: 35, gold: 16, fps: 3.4 };
+
+ENEMIES.fire_earth_slug = extend(ENEMIES.slug_proto, {
+	life: "nnnneeefffeeefffnnnn",
+	frames: [[0, 6], [1, 6]]
+});
+
+ENEMIES.water_earth_slug = extend(ENEMIES.slug_proto, {
+	life: "nnnneeewwweeewwwnnnn",
+	frames: [[2, 6], [3, 6]]
+});
+
+ENEMIES.water_fire_slug = extend(ENEMIES.slug_proto, {
+	life: "nnnnfffwwwfffwwwnnnn",
+	frames: [[4, 6], [5, 6]]
+});
+
+ENEMIES.earth_fire_slug = extend(ENEMIES.slug_proto, {
+	life: "nnnnfffeeefffeeennnn",
+	frames: [[6, 6], [7, 6]]
+});
+
+ENEMIES.earth_water_slug = extend(ENEMIES.slug_proto, {
+	life: "nnnnwwweeewwweeennnn",
+	frames: [[8, 6], [9, 6]]
+});
+
+ENEMIES.fire_water_slug = extend(ENEMIES.slug_proto, {
+	life: "nnnnwwwfffwwwfffnnnn",
+	frames: [[10, 6], [11, 6]]
+});
+
+ENEMIES.hibrid_fire_slug = extend(ENEMIES.slug_proto, {
+	life: "nnnnwwwfffeeefffwwwfffnnnn",
+	frames: [[11, 0], [11, 1]]
+});
+
+ENEMIES.hibrid_water_slug = extend(ENEMIES.slug_proto, {
+	life: "nnnneeewwwfffwwweeewwwnnnn",
+	frames: [[11, 2], [11, 3]]
+});
+
+ENEMIES.hibrid_earth_slug = extend(ENEMIES.slug_proto, {
+	life: "nnnnfffeeewwweeefffnnnn",
+	frames: [[11, 4], [11, 5]]
+});
+
+ENEMIES.boss_slug = {
+	speed: 30,
+	gold: 100,
+	life: "nnnnnnnnwefwefwwwefwefwwwefwefeewefwefeewefwefffwefwefff",
+	fps: 8,
+	frames: [[11, 0], [11, 2], [11, 4], [11, 1], [11, 3], [11, 5]]
+};
+
+function create_animation_of(enemy) {
+	var cx, i;
+	
+	if(enemy.hasOwnProperty("frames")) {
+		enemy.canvas = document.createElement("canvas");
+		cx = enemy.canvas.getContext("2d");
+		
+		enemy.canvas.width = enemy.frames.length * scale;
+		enemy.canvas.height = 2 * scale;
+		
+		//Facing right
+		for(i = 0; i < enemy.frames.length; i++) {
+			tile(cx, enemy.frames[i], [i, 0]);
+		}
+		//Facing left
+		cx.scale(-1, 1);
+		for(i = 0; i < enemy.frames.length; i++) {
+			tile(cx, enemy.frames[i], [-i - 1, 1]);
+		}
+	}
+};
+
+function draw_enemies_animation() {
+	for(var key in ENEMIES) {
+		if(ENEMIES.hasOwnProperty(key)) {
+			create_animation_of(ENEMIES[key]);
+		}
+	}
+}
+
+if(tileset.complete) {
+	draw_enemies_animation();
+} else {
+	tileset.addEventListener("load", draw_enemies_animation);
+}
+
+/*----------  LEVELS  ----------*/
+
+LEVELS.push(
+	{
+		number: 1,
+		name: "Beatles",
+		start_time: 8,
+		end_time: 2,
+		waves: [
+			[4,		ENEMIES.beatle,		3.6], //4 beatles; one every 3.6 seconds
+			[6,		ENEMIES.beatle_2,	3.8]
+		]
+	},
+	{
+		number: 2,
+		name: "Fire beatles",
+		start_time: 4,
+		end_time: 2,
+		waves: [
+			[4,		ENEMIES.fire_beatle,	3.8	],
+			[5,		ENEMIES.beatle_2,		3.4	],
+			[4,		ENEMIES.fire_beatle_2,	3.4	]
+		]
+	},
+	{
+		number: 3,
+		name: "Turtles",
+		start_time: 4,
+		end_time: 2,
+		waves: [
+			[6,		ENEMIES.turtle,		4.3	],
+			[5,		ENEMIES.turtle_2,	4	],
+			[4,		ENEMIES.turtle_3,	3.7	]
+		]
+	},
+	{
+		number: 4,
+		name: "Pigeons",
+		start_time: 6,
+		end_time: 2,
+		waves: [
+			[10,	ENEMIES.pigeon,			0.7	],
+			[10,	ENEMIES.fire_pigeon,	1	],
+			[10,	ENEMIES.pigeon,			0.3	],
+			[5,		ENEMIES.pigeon_2,		0.6	]
+		]
+	},
+	{
+		number: 5,
+		name: "Fishes",
+		start_time: 6,
+		end_time: 4,
+		waves: [
+			[4,		ENEMIES.fish,			3.8	],
+			[3,		ENEMIES.fish_2,			3.8	],
+			[2,		ENEMIES.earth_fish,		3.8	],
+			[2,		ENEMIES.fish_2,			3.8	],
+			[2,		ENEMIES.earth_fish_2,	3.8	],
+			[2,		ENEMIES.fire_fish,		3.8	],
+			[2,		ENEMIES.earth_fish_2,	3.8	],
+			[2,		ENEMIES.fire_fish_2,	3.8	], 10, //wait 10 seconds
+			[1, 	ENEMIES.boss_fish,		3.8 ]
+		]
+	},
+	{
+		number: 6,
+		name: "Mosquitoes",
+		start_time: 4,
+		end_time: 2,
+		waves: [
+			[20,	ENEMIES.mosquito,		0.3	], 4,
+			[10,	ENEMIES.fire_mosquito,	0.3	], 4,
+			[20,	ENEMIES.mosquito_2,		0.26], 4,
+			[10,	ENEMIES.earth_mosquito,	0.3	], 4,
+			[20,	ENEMIES.mosquito_3,		0.22], 4,
+			[10,	ENEMIES.water_mosquito,	0.3	], 4,
+			[10,	ENEMIES.mosquito_4,		0.2	], 2,
+			[15,	ENEMIES.mosquito_4,		0.2	]
+		]
+	},
+	{
+		number: 7,
+		name: "Slugs",
+		start_time: 6,
+		end_time: 0,
+		waves: [
+			[4,		ENEMIES.fire_earth_slug,	3.2	],
+			[4,		ENEMIES.water_earth_slug,	3.2	],
+			[4,		ENEMIES.water_fire_slug,	3.2	],
+			[4,		ENEMIES.earth_water_slug,	3.2	],
+			[4,		ENEMIES.fire_water_slug,	3.2	], 2,
+			[4,		ENEMIES.hibrid_fire_slug,	3.2	], 2,
+			[4,		ENEMIES.hibrid_water_slug,	3.2	], 2,
+			[4,		ENEMIES.hibrid_earth_slug,	3.2	], 10,
+			[1,		ENEMIES.boss_slug,			1	]
+		]
+	}
+);
 
 /*=====  End of DEFINICIÓN DE ENEMIGOS Y NIVELES  ======*/
 
