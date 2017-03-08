@@ -320,7 +320,8 @@ function delay_animation(initial_value, delay, animation) {
 var state,
 	menu, 						//state = 0
 	instructions,				//state = 1
-	game, render, toolbar;		//state = 2
+	game, render, toolbar,		//state = 2
+	score;						//state = 3
 
 
 /*=====  End of ESTADO Y VARIABLES DE ESTADO  ======*/
@@ -437,10 +438,10 @@ instructions.frame = function(frame) {
 function circular_button_entity(draw_content, dest, size, onclick) {
 	return {
 		x: dest[0], y: dest[1],
-		width: pixels(size), height: pixels(size),
+		width: size, height: size,
 		draw: function(x, y, hover) {
 			if(hover) {
-				circle(foreground, [x, y], pixels(size / 2), "#bdbdff");
+				circle(foreground, [x, y], size / 2, "#d6d6ff");
 			}
 			draw_content(x, y, hover);
 		},
@@ -451,7 +452,7 @@ function circular_button_entity(draw_content, dest, size, onclick) {
 instructions.entities.push(
 	circular_button_entity(function(x, y) {
 		arrow(foreground, -1, [x, y], 16, "black", 2);
-	}, [2.15, 3.05], 16, menu.load)
+	}, [2.15, 3.05], pixels(16), menu.load)
 );
 
 /*=====  End of PANTALLA DE INSTRUCCIONES  ======*/
@@ -475,6 +476,8 @@ window.onload = function() {
 				game.frame(time);
 				render.frame(time);
 				toolbar.frame(time);
+			} else if(state === 3) {
+				score.frame(time);
 			}
 			
 			click = escape = false;
@@ -520,10 +523,10 @@ game = {
 	enemies: [],
 	explosions: [],
 	floating_texts: [],
-	entities: [],
 	beams: [], //projectiles from towers
 	speed: 0,
 	state: 0,
+	timer: undefined,
 	selected_tower: undefined
 };
 
@@ -539,10 +542,10 @@ game.load = function() {
 		enemies				=	[];
 		explosions			=	[];
 		floating_texts		=	[];
-		entities 			=	[];
 		beams				=	[];
 		speed				=	1;
 		state				=	0;
+		timer 				=	0;
 		selected_tower		=	undefined;
 		
 		for(var y = 0; y < map_height; y++) {
@@ -556,6 +559,14 @@ game.load = function() {
 				}
 			}
 		}
+	}
+	
+	with(score) {
+		gold = 0;
+		gold_spent.towers = 0;
+		gold_spent.upgrades = 0;
+		gold_spent.elements.f = gold_spent.elements.w = gold_spent.elements.e = 0;
+		enemies_killed = 0;
 	}
 	
 	game.load_level(0);
@@ -593,6 +604,7 @@ game.frame = function(frame) {
 			          game.tower_map[y][x] === false) {
 				
 				game.gold -= tower.price;
+				score.gold_spent.towers += tower.price;
 				toolbar.buying_tower = undefined;
 				toolbar.hide_elements_timer = 0;
 				
@@ -662,6 +674,11 @@ game.frame = function(frame) {
 				});
 				
 				game.lose_live();
+				
+				if(ENEMIES.boss_slug.isPrototypeOf(enemy)) {
+					//Not killing the final boss makes you loose the game
+					game.state = -1;
+				}
 			}
 			
 	/*----------  Enemy time  ----------*/
@@ -756,6 +773,8 @@ game.frame = function(frame) {
 					});
 					
 					game.gold += Math.floor(enemy.gold * game.gold_multiplier);
+					score.enemies_killed += 1;
+					score.gold += Math.floor(enemy.gold * game.gold_multiplier);
 				}
 			}
 		}
@@ -781,6 +800,7 @@ game.sell_tower = function() {
 	
 	game.tower_map[tower.y][tower.x] = false;
 	game.gold += tower.price;
+	score.gold += tower.price;
 	game.selected_tower = undefined;
 };
 
@@ -789,6 +809,7 @@ game.upgrade_tower = function() {
 	
 	if(game.gold >= tower.upgrade_price && tower.level < 4) {
 		game.gold -= tower.upgrade_price;
+		score.gold_spent.upgrades += tower.upgrade_price;
 		tower.price += depreciate(tower.upgrade_price);
 		tower.upgrade_price *= 2;
 		tower.level += 1;
@@ -801,6 +822,7 @@ game.buy_element = function(t) {
 	
 	if(game.gold >= 20) {
 		game.gold -= 20;
+		score.gold_spent.elements[t] += 20;
 		tower.element = t;
 		tower.load_progress = Math.min(tower.load_time / 2, tower.load_progress);
 		tower.price += depreciate(20);
@@ -817,8 +839,9 @@ game.load_level = function(n) {
 		level_finished	= false;
 	}
 	
-	if(!game.level) {
-		return game.win();
+	if(!game.level && !game.state) {
+		//Win
+		game.state = 1;
 	}
 	
 	//Level events
@@ -882,14 +905,12 @@ game.set_enemy_facing = function(enemy) {
 
 game.lose_live = function() {
 	game.lives -= 1;
-	if(game.lives === -1) {
-		game.lose();
+	score.lives_lost += 1;
+	if(game.lives === -1 && !game.state) {
+		//Lose
+		game.state = -1;
 	}
 };
-
-game.lose = function() {};
-
-game.win = function() {};
 
 /*=====  End of JUEGO PROPIAMENTE DICHO  ======*/
 
@@ -983,7 +1004,7 @@ render.frame = function(frame_time) {
 		}
 		render.tower(fx, tower, [mouse.x - .5, mouse.y - .5]);
 	}
-}
+};
 
 render.tower = function(cx, tower, dest) {
 	tile(cx, [4 + tower.index, 1], [dest[0], dest[1] - 1], 1, 2);
@@ -1127,7 +1148,7 @@ toolbar.frame = function(frame) {
 	
 	if(game.level) {
 		
-		var global_alpha = Math.min(1, Math.max(0.7, 1 + (mouse.y - 12.5) / 4));
+		var global_alpha = Math.min(1, Math.max(0.7, 1 + (mouse.y - 11.5) / 4));
 		
 		var end = toolbar.draw_level_info(game.level, game.level_time, 0.25, 10.75, 12.5, global_alpha);
 		
@@ -1137,17 +1158,29 @@ toolbar.frame = function(frame) {
 		}
 	}
 	
+	/*----------  Win or lose game  ----------*/
+	
+	if(game.state) {
+		game.timer += frame;
+		rect(fx, [0, 0], map_width, map_height, "rgba(0,0,0," + Math.min(1, game.timer / 3) + ")");
+		if(game.timer > 1.5) {
+			score.load();
+		}
+	}
+	
 };
 
-function rectangular_button(draw_content, dest, width, height, onclick) {
+function rectangular_button(dest, width, height, draw_content, onclick, color_fn) {
 	return {
 		x: dest[0], y: dest[1], width: width, height: height,
 		draw: function(x, y, hover) {
 			if(hover) {
-				rect(foreground, [x, y], width, height, "#bdbdff");
+				foreground.fillStyle = (color_fn ? color_fn() : true) ? (click ? "#7777ff" : "#bdbdff") :
+																		(click ? "#ff7777" : "#ffbdbd");
+				rect(foreground, [x, y], width, height);
 			} else {
 				foreground.lineWidth = 1;
-				foreground.strokeStyle = "#bdbdff";
+				foreground.strokeStyle = "#d6d6ff";
 				foreground.setLineDash([2,2]);
 				foreground.strokeRect(x * scale + 1.5, y * scale + 1.5,
 				                      width * scale - 3, height * scale - 3);
@@ -1285,7 +1318,7 @@ toolbar.buttons.push({
 //Buy towers
 [0,1,2].forEach(function(n) {
 	toolbar.buttons.push(
-		rectangular_button(function(x, y, hover) {
+		rectangular_button([11 + n, 1], 1, 2, function(x, y, hover) {
 			//displays tower info
 			if(hover) {
 				var tower = TOWERS[n];
@@ -1296,8 +1329,10 @@ toolbar.buttons.push({
 			}
 			//draws tower
 			tile(foreground, [4 + n, 1], [x, y], 1, 2);
-		}, [11 + n, 1], 1, 2, function() {
+		}, function() {
 			toolbar.select_tower(n);
+		}, function() {
+			return game.gold >= TOWERS[n].price;
 		})
 	);
 });
@@ -1306,18 +1341,18 @@ toolbar.buttons.push({
 
 //Sell	
 toolbar.sell_button = [
-	rectangular_button(function(x, y, hover) {
+	rectangular_button([13 + pixels(4), 4], 1.75, .5, function(x, y, hover) {
 		text(foreground, "SELL", [x + .5, y + pixels(4)], hover ? "black" : "gray", 10);
 		if(hover) {
 			icon_text(foreground, [3, 2], game.selected_tower.price,
 			          [x - 1 + pixels(6), y + pixels(4)], "black");
 		}
-	}, [13 + pixels(4), 4], 1.75, .5, game.sell_tower)
+	}, game.sell_tower)
 ];
 
 //Upgrade
 toolbar.upgrade_button = [
-	rectangular_button(function(x, y, hover) {
+	rectangular_button([13 + pixels(4), 4.5], 1.75, 1, function(x, y, hover) {
 		var tower = game.selected_tower;
 		
 		text(foreground, "UPGRADE", [x + pixels(8), y + pixels(5)], hover ? "black" : "gray", 10);
@@ -1331,12 +1366,18 @@ toolbar.upgrade_button = [
 			rect(foreground, [x - 1 + pixels(4), y], 1 - pixels(4), .5, "white");
 			icon_text(foreground, [2, 2], load_time, [x - 1 + pixels(6), y + pixels(4)], "#070");
 		}
-	}, [13 + pixels(4), 4.5], 1.75, 1, game.upgrade_tower)
+	}, function() {
+		if(game.gold >= game.selected_tower.upgrade_price) {
+			game.upgrade_tower();
+		}
+	}, function() {
+		return game.gold >= game.selected_tower.upgrade_price;
+	})
 ];
 
 //Buy element
 toolbar.buy_element_button = [
-	rectangular_button(function(x, y, hover) {
+	rectangular_button([13 + pixels(4), 5.5], 1.75, 1, function(x, y, hover) {
 
 		if(toolbar.hide_elements_timer > 0) {
 			var alpha = Math.min(toolbar.hide_elements_timer, 0.1) * 10;
@@ -1350,15 +1391,17 @@ toolbar.buy_element_button = [
 		icon_text(foreground, [1, 0], "20", [x + .75 + pixels(2), y + .5 + pixels(2)],
 		          game.gold < 20 && is_selected ? "#700" : undefined);
 		
-	}, [13 + pixels(4), 5.5], 1.75, 1, function() {
+	}, function() {
 		if(game.gold >= 20 && toolbar.hide_elements_timer < 0) {
 			toolbar.hide_elements_timer = 2;
 		}
+	}, function() {
+		return game.gold >= 20;
 	})
 ];
 
 function buy_element_button(x, element, blur_color) {
-	return rectangular_button(function(x, y, hover) {
+	return rectangular_button([x, 6.5], .5, .5, function(x, y, hover) {
 		if(toolbar.hide_elements_timer > 1.9) {
 			y -= (toolbar.hide_elements_timer - 1.9) / .1 * .5
 		} else if(toolbar.hide_elements_timer < .1) {
@@ -1371,7 +1414,7 @@ function buy_element_button(x, element, blur_color) {
 		if(hover) {
 			toolbar.hide_elements_timer = 1.9;
 		}
-	}, [x, 6.5], .5, .5, function() {
+	}, function() {
 		game.buy_element(element);
 	});
 }
@@ -1390,7 +1433,7 @@ function speed_control_button(n) {
 		width: .5, height: .5,
 		draw: function(x, y, hover) {
 			round_rect(foreground, [x, y], .5, .5, pixels(4),
-			           hover || game.speed === n ? "#bdbdff" : "white");
+			           hover || game.speed === n ? "#d6d6ff" : "white");
 			tile(foreground, [3 + n%2 * .5, n === 2 ? .5 : 0], [x, y], .5, .5);
 		},
 		onclick: function() {
@@ -1409,14 +1452,100 @@ toolbar.buttons.push(
 
 
 
+/*===============================================================
+=            PANTALLA DE PUNTAJE CUANDO GANAS/PERDÉS            =
+===============================================================*/
 
+score = {
+	entities: [],
+	game_state: undefined,
+	canvas: document.createElement("canvas"),
+	fade_in: 0,
+	
+	gold: 0,
+	gold_spent: {
+		towers: 0,
+		upgrades: 0,
+		elements: {"f": 0, "w": 0, "e": 0},
+		element_total: undefined,
+		total: undefined
+	},
+	enemies_killed: 0,
+	lives_lost: 0
+};
 
+score.cx = score.canvas.getContext("2d");
 
+score.load = function() {
+	state = 3;
+	score.canvas.width = map_width * scale;
+	score.canvas.height = map_height * scale;
+	score.cx.drawImage(foreground_canvas, 0, 0);
+	
+	score.fade_in = 0;
+	
+	with(score.gold_spent) {
+		element_total = elements.f + elements.w + elements.e;
+		total = towers + upgrades + element_total;
+	}
+};
 
+score.frame = function(frame) {
+	score.fade_in += frame;
+	clear(foreground);
+	clear(fx);
+	
+	foreground.globalAlpha = 1;
+	
+	foreground.drawImage(score.canvas, 0, 0);
+	rect(foreground, [0, 0], map_width, map_height, "rgba(0,0,0,.5)");
+	
+	foreground.globalAlpha = Math.min(1, score.fade_in);
+	
+	rect(foreground, [1.5, 2.5], 8, 6.5, "white");
+	
+	text(foreground, "You " + (game.state === -1 ? "lose" : "win") + "!", [2, 3], "black", "bold 20");
+	//Divisory line
+	line(foreground, [2, 3.75], [3, 3.75], "red");
+	line(foreground, [3, 3.75], [6, 3.75], "#00ff00");
+	line(foreground, [6, 3.75], [9, 3.75], "#0000ff");
+	
+	draw_entities(score.entities);
+	
+	text(foreground, "GOLD SPENT", [2, 4.25], "black", "bold 10");
+	text(foreground, "towers", [2.5, 4.75], undefined, "10");
+	icon_text(foreground, [1, 0], score.gold_spent.towers, [8, 4.75]);
+	text(foreground, "upgrades", [2.5, 5.25]);
+	icon_text(foreground, [1, 0], score.gold_spent.upgrades, [8, 5.25]);
+	text(foreground, "elements", [2.5, 5.75]);
+	icon_text(foreground, [1, 0], score.gold_spent.elements.f, [5, 5.75], element_color("f"));
+	icon_text(foreground, [1, 0], score.gold_spent.elements.e, [6, 5.75], element_color("e"));
+	icon_text(foreground, [1, 0], score.gold_spent.elements.w, [7, 5.75], element_color("w"));
+	icon_text(foreground, [1, 0], score.gold_spent.element_total, [8, 5.75], "black");
+	text(foreground, "+", [5.5 + pixels(4), 5.75]);
+	text(foreground, "+", [6.5 + pixels(4), 5.75]);
+	text(foreground, "=", [7.5 + pixels(4), 5.75]);
+	text(foreground, "TOTAL", [2, 6.25], undefined, "bold 10");
+	icon_text(foreground, [1, 0], score.gold_spent.total, [8, 6.25]);
+	
+	text(foreground, "ENEMIES KILLED", [2, 7.25], undefined, "10");
+	icon_text(foreground, [3, 0], score.enemies_killed, [8, 7.25]);
+	text(foreground, "GOLD EARNED", [2, 7.75]);
+	icon_text(foreground, [3, 2], score.gold, [8, 7.75]);
+	text(foreground, "LIVES LOST", [2, 8.25]);
+	icon_text(foreground, [2, 0], score.lives_lost, [8, 8.25]);
+};
 
+score.entities.push(
+	circular_button_entity(function(x, y, hover) {
+		line(foreground, [x + pixels(2), y + pixels(2)],
+		     [x + .5 - pixels(2), y + .5 - pixels(2)], "black", 2);
+		line(foreground, [x + .5 - pixels(2), y + pixels(2)],
+		     [x + pixels(2), y + .5 - pixels(2)]);
+	}, [8.5, 3], .5, menu.load)
+);
 
-
-
+/*=====  End of PANTALLA DE PUNTAJE CUANDO GANAS/PERDÉS  ======*/
 
 
 
