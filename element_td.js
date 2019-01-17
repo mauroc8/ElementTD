@@ -512,6 +512,7 @@ game = {
 	difficulty: 0,
 	gold_multiplier: 0,
 	time: 0,
+	real_time: 0,
 	level: undefined,
 	level_number: 0,
 	level_time: 0,
@@ -536,6 +537,7 @@ game.load = function() {
 	with(game) {
 		gold_multiplier		=	1.5 - difficulty * .25;
 		time				=	0;
+		real_time = 0;
 		gold				=	30;
 		lives				=	10 - difficulty * 5;
 		tower_map			=	[];
@@ -583,6 +585,7 @@ game.frame = function(frame) {
 	
 	/*----------  Time  ----------*/
 	
+	game.real_time += frame;
 	game.time 		+= game_frame;
 	game.level_time += game_frame;
 	
@@ -1072,11 +1075,13 @@ toolbar = {
 	buttons: [],
 	selected_buttons: [],
 	buying_tower: undefined,
+	first_level_popup: false, 
 	hide_elements_timer: 0
 };
 
 toolbar.load = function() {
 	toolbar.buying_tower = undefined;
+	toolbar.first_level_popup = true;
 };
 
 toolbar.frame = function(frame) {
@@ -1146,7 +1151,7 @@ toolbar.frame = function(frame) {
 	
 	if(game.level) {
 		
-		var global_alpha = Math.min(1, Math.max(0.7, 1 + (mouse.y - 11.5) / 4));
+		var global_alpha = Math.min(1, Math.max(0.9, 1 + (mouse.y - 11.5) * 0.1));
 		
 		var end = toolbar.draw_level_info(game.level, game.level_time, 0.25, 10.75, 12.5, global_alpha);
 		
@@ -1166,6 +1171,12 @@ toolbar.frame = function(frame) {
 		}
 	}
 	
+	/*----------  First level popup  ----------*/
+	
+	if (toolbar.first_level_popup) {
+		draw_entities(toolbar.first_level_popup_entity);
+	}
+	
 };
 
 const LIGHT_GRAY = "#d6d6ff";
@@ -1175,7 +1186,7 @@ const ERROR_RED = "#ff7777";
 function rectangular_button(dest, width, height, draw_content, onclick, color_fn) {
 	return {
 		x: dest[0], y: dest[1], width: width, height: height,
-		draw: function(x, y, hover) {
+		draw: function(x, y, hover, clicking) {
 			if(hover) {
 				foreground.fillStyle = (color_fn ? color_fn() : true) ? (click ? "#7777ff" : "#bdbdff") :
 																		(click ? ERROR_RED : LIGHT_RED);
@@ -1188,7 +1199,7 @@ function rectangular_button(dest, width, height, draw_content, onclick, color_fn
 				                      width * scale - 3, height * scale - 3);
 				foreground.setLineDash([]);
 			}
-			draw_content(x, y, hover);
+			draw_content(x, y, hover, clicking);
 		},
 		onclick: onclick
 	};
@@ -1305,6 +1316,9 @@ toolbar.draw_level_info = function(level, level_time, start, end, y, global_alph
 	return start + final_x;
 };
 
+/*                    ENTITIES                      */
+/*                    ========                      */
+
 /*----------  Quit and buy tower buttons  ----------*/
 
 //Quit
@@ -1406,27 +1420,6 @@ toolbar.buy_element_button = [
 			icon_text(foreground, [1, 0], "20", [x + .75 + pixels(2), y + 1 + pixels(2)]);
 		}
 	}
-/*
-	rectangular_button([13 + pixels(4), 5.5], 1.75, 1, function(x, y, hover) {
-
-		if(toolbar.hide_elements_timer > 0) {
-			var alpha = Math.min(toolbar.hide_elements_timer, 0.1) * 10;
-			rect(foreground, [x, y], 1.75, 1, "rgba(230, 230, 230, " + alpha.toFixed(2) + ")");
-		}
-
-		var is_selected = hover || toolbar.hide_elements_timer > 0;
-
-		icon_text(foreground, [1, 0], "20", [x + .75 + pixels(2), y + .5 + pixels(2)],
-		          game.gold < 20 && is_selected ? "#700" : undefined);
-		
-	}, function() {
-		if(game.gold >= 20 && toolbar.hide_elements_timer < 0) {
-			toolbar.hide_elements_timer = 2;
-		}
-	}, function() {
-		return game.gold >= 20;
-	})
-*/
 ];
 
 function buy_element_button(x, element, blur_color) {
@@ -1458,12 +1451,37 @@ function speed_control_button(n) {
 		x: 12.5 + n * .75, y: 12.25,
 		width: .5, height: .5,
 		draw: function(x, y, hover) {
-			round_rect(foreground, [x, y], .5, .5, pixels(4),
-			           hover || game.speed === n ? LIGHT_GRAY : "white");
+			
+			var selected = hover || game.speed === n;
+			
+			if (selected) {
+				foreground.globalAlpha = 1;
+			} else {
+				foreground.globalAlpha = 0.7;
+			}
+			
+			var first_level_popup = n == 1 && toolbar.first_level_popup
+			
+			if (first_level_popup && !selected) {
+				let st = Math.sin(game.real_time * 2);
+				foreground.globalAlpha = 0.7 + st * st * 0.3;
+			}
+			
+			round_rect(foreground, [x, y], .5, .5, pixels(4), BLACK);
 			tile(foreground, [3 + n%2 * .5, n === 2 ? .5 : 0], [x, y], .5, .5);
+			
+			/* First level popup arrow */
+			
+			if (first_level_popup) {
+				tile(foreground, [10, 2], [x - .3125, y - 1], 1, 1);
+			}
 		},
 		onclick: function() {
 			game.speed = n;
+			
+			if (n != 0) {
+				toolbar.first_level_popup = false;
+			}
 		}
 	};
 }
@@ -1473,6 +1491,22 @@ toolbar.buttons.push(
 	speed_control_button(1),
 	speed_control_button(2)
 );
+
+const TRANSPARENT_BLACK = 'rgba(0, 0, 0, 0.7)';
+
+toolbar.first_level_popup_entity = [
+	{
+		x: 7.25, y: 10.75, width: 3.5, height: 1.25,
+		draw: function(x, y, hover, clicking) {
+			
+			foreground.globalAlpha = 0.7;
+			
+			round_rect(foreground, [x, y], this.width, this.height, 0.25, BLACK);
+			text(foreground, "Click PLAY to", [x + pixels(8), y + pixels(8)], 'white', 12);
+			text(foreground, "start game >>", [x + pixels(8), y + pixels(14 + 8)], 'white', 12);
+		}
+	}
+];
 
 /*=====  End of BARRA DE HERRAMIENTAS DEL JUEGO  ======*/
 
