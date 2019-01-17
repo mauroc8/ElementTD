@@ -60,7 +60,7 @@ function draw_entities(entities) {
 		with(entities[i]) {
 			hover = m.x > x && m.y > y &&
 					m.x < x + width && m.y < y + height;
-			draw(x, y, hover);
+			draw(x, y, hover, hover && c);
 			if(hover && c && onclick) {
 				onclick(x, y);
 			}
@@ -441,7 +441,7 @@ function circular_button_entity(draw_content, dest, size, onclick) {
 		width: size, height: size,
 		draw: function(x, y, hover) {
 			if(hover) {
-				circle(foreground, [x, y], size / 2, "#d6d6ff");
+				circle(foreground, [x, y], size / 2, LIGHT_GRAY);
 			}
 			draw_content(x, y, hover);
 		},
@@ -543,7 +543,7 @@ game.load = function() {
 		explosions			=	[];
 		floating_texts		=	[];
 		beams				=	[];
-		speed				=	1;
+		speed				=	0; // Iniciar pausado.
 		state				=	0;
 		timer 				=	0;
 		selected_tower		=	undefined;
@@ -1126,20 +1126,18 @@ toolbar.frame = function(frame) {
 			draw_entities(toolbar.upgrade_button);
 		}
 		if(tower.element === "n") {
-			if(toolbar.hide_elements_timer > 0) {
-				draw_entities(toolbar.element_buttons);
-			}
+
 			draw_entities(toolbar.buy_element_button);
-			toolbar.hide_elements_timer -= frame;
+			draw_entities(toolbar.element_buttons);
 		} else {
-			text(foreground, "This tower will only", [11 + pixels(4), 6 + pixels(4)], "gray");
+			text(foreground, "This tower will only", [11 + pixels(4), 6 + pixels(4)], GRAY);
 			text(foreground, "attack ", [11 + pixels(4), 6.5 + pixels(4)]);
 			text(foreground, element_name(tower.element).toLowerCase(),
 			     [11 + pixels(4) + text_width(foreground, "attack "), 6.5 + pixels(4)],
 			     element_color(tower.element));
 			text(foreground, " enemies",
 			     [11 + pixels(4) + text_width(foreground, "attack " + element_name(tower.element)), 6.5 + pixels(4)],
-			     "gray");
+			     GRAY);
 		}
 		draw_entities(toolbar.sell_button);
 	}
@@ -1170,17 +1168,21 @@ toolbar.frame = function(frame) {
 	
 };
 
+const LIGHT_GRAY = "#d6d6ff";
+const LIGHT_RED = "#ffbdbd";
+const ERROR_RED = "#ff7777";
+
 function rectangular_button(dest, width, height, draw_content, onclick, color_fn) {
 	return {
 		x: dest[0], y: dest[1], width: width, height: height,
 		draw: function(x, y, hover) {
 			if(hover) {
 				foreground.fillStyle = (color_fn ? color_fn() : true) ? (click ? "#7777ff" : "#bdbdff") :
-																		(click ? "#ff7777" : "#ffbdbd");
+																		(click ? ERROR_RED : LIGHT_RED);
 				rect(foreground, [x, y], width, height);
 			} else {
 				foreground.lineWidth = 1;
-				foreground.strokeStyle = "#d6d6ff";
+				foreground.strokeStyle = LIGHT_GRAY;
 				foreground.setLineDash([2,2]);
 				foreground.strokeRect(x * scale + 1.5, y * scale + 1.5,
 				                      width * scale - 3, height * scale - 3);
@@ -1198,8 +1200,8 @@ toolbar.draw_tower_info = function(cx, tower, dest, gold_color) {
 	var x = dest[0] + pixels(2),
 		y = dest[1] + pixels(4);
 	
-	icon_text(cx, [1, 0], tower.price, [x, y + .5], gold_color || "gray", "10");
-	icon_text(cx, [0, 0], toolbar.format_load_time(tower.load_time), [x, y + 1], "gray");
+	icon_text(cx, [1, 0], tower.price, [x, y + .5], gold_color || BLACK, "10");
+	icon_text(cx, [0, 0], toolbar.format_load_time(tower.load_time), [x, y + 1], BLACK);
 	icon_text(cx, [3, 0], tower.range, [x, y + 1.5]);
 };
 
@@ -1315,17 +1317,19 @@ toolbar.buttons.push({
 	onclick: menu.load
 });
 
+const RED = '#700';
+
 //Buy towers
 [0,1,2].forEach(function(n) {
 	toolbar.buttons.push(
-		rectangular_button([11 + n, 1], 1, 2, function(x, y, hover) {
+		rectangular_button([11 + n, 1], 1, 2, function(x, y, hover, clicking) {
 			//displays tower info
 			if(hover) {
 				var tower = TOWERS[n];
 				toolbar.draw_tower_info(foreground, tower, [14, y],
-				                   game.gold < tower.price ? "#770000" : undefined);
+				                   game.gold < tower.price ? (clicking ? RED : GRAY) : undefined);
 				
-				text(foreground, tower.material, [14 + pixels(1), y + pixels(6)], "black", "bold 10");
+				text(foreground, tower.material, [14 + pixels(1), y + pixels(6)], BLACK, "bold 10");
 			}
 			//draws tower
 			tile(foreground, [4 + n, 1], [x, y], 1, 2);
@@ -1342,10 +1346,10 @@ toolbar.buttons.push({
 //Sell	
 toolbar.sell_button = [
 	rectangular_button([13 + pixels(4), 4], 1.75, .5, function(x, y, hover) {
-		text(foreground, "SELL", [x + .5, y + pixels(4)], hover ? "black" : "gray", 10);
+		text(foreground, "SELL", [x + .5, y + pixels(4)], BLACK, 10);
 		if(hover) {
 			icon_text(foreground, [3, 2], game.selected_tower.price,
-			          [x - 1 + pixels(6), y + pixels(4)], "black");
+			          [x - 1 + pixels(6), y + pixels(4)], BLACK);
 		}
 	}, game.sell_tower)
 ];
@@ -1355,10 +1359,11 @@ toolbar.upgrade_button = [
 	rectangular_button([13 + pixels(4), 4.5], 1.75, 1, function(x, y, hover) {
 		var tower = game.selected_tower;
 		
-		text(foreground, "UPGRADE", [x + pixels(8), y + pixels(5)], hover ? "black" : "gray", 10);
+		var canbuy = game.gold >= tower.upgrade_price;
+		
+		text(foreground, "UPGRADE", [x + pixels(8), y + pixels(5)], canbuy ? BLACK : GRAY, 10);
 		text(foreground, "for", [x + pixels(4), y + .5 + pixels(2)]);
-		icon_text(foreground, [1,0], tower.upgrade_price, [x + .75, y + .5 + pixels(2)],
-		          game.gold < tower.upgrade_price && hover ? "#700" : undefined);
+		icon_text(foreground, [1,0], tower.upgrade_price, [x + .75, y + .5 + pixels(2)]);
 		
 		if(hover) {
 			var load_time = toolbar.format_load_time(tower.load_time / 2);
@@ -1375,8 +1380,33 @@ toolbar.upgrade_button = [
 	})
 ];
 
+const GRAY = 'gray';
+const BLACK = 'black';
+
 //Buy element
 toolbar.buy_element_button = [
+	{
+		x: 13 + pixels(4), y: 5.5, width: 1.75, height: 1.5,
+		draw: function(x, y, hover, clicking) {
+			var canbuy = game.gold >= 20;
+			
+			if (!canbuy && hover) {
+				foreground.fillStyle = clicking ? ERROR_RED : LIGHT_RED;
+				foreground.fillRect(x * scale + 1.5, y * scale + 1.5,
+				     this.width * scale - 3, this.height * scale - 3);
+			} else {
+				foreground.lineWidth = 1;
+				foreground.strokeStyle = LIGHT_GRAY
+				foreground.strokeRect(x * scale + 1.5, y * scale + 1.5,
+				              this.width * scale - 3, this.height * scale - 3); // with * scale
+			}
+			
+			text(foreground, "ELEMENT", [x + pixels(8), y + .5 + pixels(5)], canbuy ? BLACK : GRAY);
+			text(foreground, "for ", [x + pixels(6), y + 1 + pixels(2)]);
+			icon_text(foreground, [1, 0], "20", [x + .75 + pixels(2), y + 1 + pixels(2)]);
+		}
+	}
+/*
 	rectangular_button([13 + pixels(4), 5.5], 1.75, 1, function(x, y, hover) {
 
 		if(toolbar.hide_elements_timer > 0) {
@@ -1386,8 +1416,6 @@ toolbar.buy_element_button = [
 
 		var is_selected = hover || toolbar.hide_elements_timer > 0;
 
-		text(foreground, "ELEMENT", [x + pixels(8), y + pixels(5)], is_selected ? "black" : "gray");
-		text(foreground, "for ", [x + pixels(6), y + .5 + pixels(2)]);
 		icon_text(foreground, [1, 0], "20", [x + .75 + pixels(2), y + .5 + pixels(2)],
 		          game.gold < 20 && is_selected ? "#700" : undefined);
 		
@@ -1398,31 +1426,29 @@ toolbar.buy_element_button = [
 	}, function() {
 		return game.gold >= 20;
 	})
+*/
 ];
 
 function buy_element_button(x, element, blur_color) {
-	return rectangular_button([x, 6.5], .5, .5, function(x, y, hover) {
-		if(toolbar.hide_elements_timer > 1.9) {
-			y -= (toolbar.hide_elements_timer - 1.9) / .1 * .5
-		} else if(toolbar.hide_elements_timer < .1) {
-			y -= (.1 - toolbar.hide_elements_timer) / .1 * .5;
+	return {
+		x: x, y: 5.5 + pixels(2), width: .5 + pixels(2), height: .5 - pixels(4), 
+		draw: function(x, y, hover) {
+			let canbuy = game.gold >= 20;
+			
+			rect(foreground, [x + pixels(1), y + pixels(1)],
+			     this.width - pixels(2), this.height - pixels(2),
+			     hover && canbuy ? element_color(element) : blur_color);
+		},
+		onclick: function() {
+			game.buy_element(element);
 		}
-		
-		rect(foreground, [x + pixels(4), y + pixels(4)], pixels(8), pixels(8),
-		     hover ? element_color(element) : blur_color);
-
-		if(hover) {
-			toolbar.hide_elements_timer = 1.9;
-		}
-	}, function() {
-		game.buy_element(element);
-	});
+	};
 }
 
 toolbar.element_buttons = [
-	buy_element_button(13 + pixels(4), "f", "#faa"),
-	buy_element_button(13.625 + pixels(4), "e", "#afa"),
-	buy_element_button(14.25 + pixels(4), "w", "#aaf")
+	buy_element_button(13 + pixels(6), "f", "#faa"),
+	buy_element_button(13 + 1 * (.5 + pixels(1)) + pixels(6), "e", "#afa"),
+	buy_element_button(13 + 2 * (.5 + pixels(1)) + pixels(6), "w", "#aaf")
 ];
 
 /*----------  Speed control buttons  ----------*/
@@ -1433,7 +1459,7 @@ function speed_control_button(n) {
 		width: .5, height: .5,
 		draw: function(x, y, hover) {
 			round_rect(foreground, [x, y], .5, .5, pixels(4),
-			           hover || game.speed === n ? "#d6d6ff" : "white");
+			           hover || game.speed === n ? LIGHT_GRAY : "white");
 			tile(foreground, [3 + n%2 * .5, n === 2 ? .5 : 0], [x, y], .5, .5);
 		},
 		onclick: function() {
